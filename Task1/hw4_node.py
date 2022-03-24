@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 import tf2_geometry_msgs
 import tf2_ros
+import math
 
 from os.path import dirname, join
 
@@ -18,6 +19,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from std_msgs.msg import ColorRGBA
 from sklearn.cluster import KMeans
 from std_msgs.msg import String
+from task1.msg import Message
 
 
 detected_points = []
@@ -50,6 +52,7 @@ class face_localizer:
 
         # Publiser for the visualization markers
         self.markers_pub = rospy.Publisher('face_markers', MarkerArray, queue_size=1000)
+        self.pub = rospy.Publisher("task1_topic", Message, queue_size=10)
 
         # Object we use for transforming between coordinate frames
         self.tf_buf = tf2_ros.Buffer()
@@ -104,6 +107,7 @@ class face_localizer:
     
 
     def find_faces(self):
+        
         print('I got a new image!')
 
         # Get the next rgb and depth images that are posted from the camera
@@ -152,7 +156,7 @@ class face_localizer:
 
         for i in range(0, face_detections.shape[2]):
             confidence = face_detections[0, 0, i, 2]
-            if confidence>0.5:
+            if confidence>0.6:
                 box = face_detections[0,0,i,3:7] * np.array([w,h,w,h])
                 box = box.astype('int')
                 x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
@@ -167,7 +171,7 @@ class face_localizer:
                 # Find the distance to the detected face
                 face_distance = float(np.nanmean(depth_image[y1:y2,x1:x2]))
 
-                print('Distance to face', face_distance)
+                
 
                 # Get the time that the depth image was recieved
                 depth_time = depth_image_message.header.stamp
@@ -175,7 +179,8 @@ class face_localizer:
                 # Find the location of the detected face
                 pose = self.get_pose((x1,x2,y1,y2), face_distance, depth_time)
 
-                if pose is not None:
+                if pose is not None and face_distance < 1.75:
+                    print('Distance to face', face_distance)
                     """c = False
                     
                     for dp in detected_points:
@@ -184,18 +189,24 @@ class face_localizer:
                             c = True
                     
                     if c == False:
-                        detected_points.append((pose.position.x, pose.position.y, pose.position.z))
-                    
-                    detected_points.append((pose.position.x, pose.position.y, pose.position.z))"""
+                        detected_points.append((pose.position.x, pose.position.y, pose.position.z))"""
+                        
+                    #detected_points.append((pose.position.x, pose.position.y, pose.position.z))
                     
                     c = False
                     for m in self.marker_array.markers:
-                        if pose.position.x > m.pose.position.x - 0.5 and pose.position.x < m.pose.position.x + 0.5\
-                            and pose.position.y > m.pose.position.y - 0.5 and pose.position.y < m.pose.position.y + 0.5:
+                        if abs(pose.position.x - m.pose.position.x) < 0.3 and abs(pose.position.y - m.pose.position.y) < 0.3:
                             c = True
                             
 
                     if c == False:
+                        
+                        msg = Message()
+                        msg.x = pose.position.x
+                        msg.y = pose.position.y
+                        msg.z = pose.position.z
+                        self.pub.publish(msg)
+                        
                         #print(pose)
                         # Create a marker used for visualization
                         self.marker_num += 1
@@ -239,15 +250,33 @@ class face_localizer:
 
 def clustering():
     arr = np.array(detected_points)
+    new_arr = []
     
-    print(arr)
+    a = True
+    for i in range(len(arr)):
+        for j in range(len(arr[0])):
+            if math.isnan(arr[i][j]):
+                a = False
+        if a:
+            new_arr.append(arr[i])
+        a = True
     
-    kmeans = KMeans(n_clusters=5, n_init=100, random_state=0).fit(arr)
+    new_arr = np.array(new_arr)
+    
+    kmeans = KMeans(n_clusters=5, n_init=30, random_state=0).fit(new_arr)
     
     markers_pub = rospy.Publisher('face_markers', MarkerArray, queue_size=5)
     marker_array = MarkerArray()
     
-    print(kmeans.cluster_centers_)
+    marker = Marker()
+    marker.id = 0
+    marker.header.frame_id = 'map'
+    marker.action = Marker.DELETEALL
+    marker_array.markers.append(marker)
+    markers_pub.publish(marker_array)
+    rospy.sleep(0.2)
+    
+    #print(kmeans.cluster_centers_)
     
     for i in range(len(kmeans.cluster_centers_)):
         marker = Marker()
@@ -260,7 +289,7 @@ def clustering():
         marker.action = Marker.ADD
         marker.frame_locked = False
         marker.lifetime = rospy.Duration.from_sec(0)
-        marker.id = i
+        marker.id = i + 1
         marker.scale = Vector3(0.1, 0.1, 0.1)
         marker.color = ColorRGBA(0, 1, 0, 1)
         marker_array.markers.append(marker)
@@ -278,9 +307,9 @@ def main():
     #rospy.Subscriber("chatter", String, callback)
 
     rate = rospy.Rate(1)
+    rospy.sleep(3)
     while not rospy.is_shutdown():
         face_finder.find_faces()
-        """if check == "I am done.": """
         rate.sleep()
 
     cv2.destroyAllWindows()
