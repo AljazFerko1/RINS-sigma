@@ -88,7 +88,7 @@ def find_parking_space(img):
 
             if w >= 200 and h >= 200 and 0.60 < ratio < 1.67:
                 got_square = True
-                print("got a square")
+                print("===> got a square")
                 cv2.imwrite('src/exercise7/scripts/kvadrati/thresh_used_{}.png'.
                     format(thresh_image_number), thresh)
 
@@ -121,11 +121,11 @@ def move_to_parking():
     # premikanje s twist messagi
     twist_publisher = rospy.Publisher('/cmd_vel_mux/input/navi', Twist, queue_size=10)
     
-    offset_to_turtlebot = 100    # parameter za ocenit, razdalja od turtlebota
+    offset_to_turtlebot = 50    # parameter za ocenit, razdalja od turtlebota
     triangle_a = abs(320-target_x)
     triangle_b = 480 - target_y + offset_to_turtlebot
-    triangle_c = math.sqrt(triangle_a**2 + triangle_b**2)
-    angle = math.atan(triangle_a/triangle_b) * 0.85
+    triangle_c = math.sqrt(triangle_b**2 + triangle_a**2)
+    angle = math.atan(triangle_a/triangle_b) * 0.75
     # if target_x <= 320:
     #     angle = -1 * angle
 
@@ -134,9 +134,9 @@ def move_to_parking():
     # obrat v smer
     twist_msg = Twist()
     if target_x <= 320:
-        angular_speed = 0.1
+        angular_speed = 0.08
     else:
-        angular_speed = -0.1
+        angular_speed = -0.08
     twist_msg.linear.x = 0
     twist_msg.linear.y = 0
     twist_msg.linear.z = 0
@@ -156,13 +156,13 @@ def move_to_parking():
     twist_publisher.publish(twist_msg)
 
     # premik naprej proti željeni točki
-    linear_speed = 0.13
+    linear_speed = 0.12
     twist_msg.linear.x = linear_speed
     twist_msg.angular.z = 0
 
     t0 = rospy.Time.now().to_sec()
     current_distance = 0
-    while(current_distance < triangle_c/480):
+    while(current_distance < triangle_c/500):
         twist_publisher.publish(twist_msg)
         t1 = rospy.Time.now().to_sec()
         current_distance = linear_speed*(t1-t0)
@@ -171,15 +171,10 @@ def move_to_parking():
     twist_publisher.publish(twist_msg)
 
 
-def transform_pixel_to_location(x, y):
-    pass
-
-
 if __name__ == '__main__':
     rospy.init_node('parking_node')
 
     # goal_pub = rospy.Publisher('/move_base_simple/goal', gmsg.PoseStamped, queue_size = 10)
-
     # square_marker_pub = rospy.Publisher('/square_markers', MarkerArray, queue_size=1000)
 
     feedback_pub = rospy.Subscriber('/move_base/feedback', MoveBaseActionFeedback, callback=add_feedback, queue_size=1)
@@ -201,5 +196,4 @@ if __name__ == '__main__':
 
     while not rospy.is_shutdown():
         find_parking_space(ground_image)
-            
         r.sleep()
