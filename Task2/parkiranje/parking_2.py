@@ -7,6 +7,8 @@ import os
 import math
 from shutil import move
 
+from cv2 import line
+
 import rospy
 
 import cv2
@@ -54,8 +56,8 @@ def find_parking_space(img):
     # thresh = cv2.threshold(sharpen, 253, 255, cv2.THRESH_BINARY_INV)[1]
     thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV)[1]
     print("delam sliko")
-    # cv2.imwrite('src/exercise7/scripts/kvadrati/thresh_{}.png'.
-    #                 format(thresh_image_number), thresh)
+    cv2.imwrite('src/exercise7/scripts/kvadrati/thresh_{}.png'.
+                    format(thresh_image_number), thresh)
     thresh_image_number += 1
 
     # opening and closing
@@ -70,7 +72,7 @@ def find_parking_space(img):
     global image_number
     global target_x
     global target_y
-    min_area = 5000
+    min_area = 3000
     best_ratio_dif = 1000
     got_square = False
     for c in cnts:
@@ -111,38 +113,62 @@ def find_parking_space(img):
         cancel_publisher = rospy.Publisher('/move_base/cancel', GoalID, queue_size=10)
         cancel_msg = GoalID()
         cancel_publisher.publish(cancel_msg)
-        # move_to_parking()
+        move_to_parking()
 
 
 # za premikanje do centra kvadrata (v parking)
 def move_to_parking():
     # premikanje s twist messagi
-    velocity_publisher = rospy.Publisher('/cmd_vel_mux/input/navi', Twist, queue_size=10)
+    twist_publisher = rospy.Publisher('/cmd_vel_mux/input/navi', Twist, queue_size=10)
     
-    offset_to_turtlebot = 80    # parameter za ocenit, razdalja od 
+    offset_to_turtlebot = 100    # parameter za ocenit, razdalja od turtlebota
     triangle_a = abs(320-target_x)
     triangle_b = 480 - target_y + offset_to_turtlebot
     triangle_c = math.sqrt(triangle_a**2 + triangle_b**2)
-    angle = math.atan(triangle_a/triangle_b)
+    angle = math.atan(triangle_a/triangle_b) * 0.85
+    # if target_x <= 320:
+    #     angle = -1 * angle
 
     print("a=", triangle_a, "b=", triangle_b, "c=", triangle_c, "angle=", angle)
     
+    # obrat v smer
     twist_msg = Twist()
+    if target_x <= 320:
+        angular_speed = 0.1
+    else:
+        angular_speed = -0.1
     twist_msg.linear.x = 0
     twist_msg.linear.y = 0
     twist_msg.linear.z = 0
     twist_msg.angular.x = 0
     twist_msg.angular.y = 0
-    twist_msg.angular.z = angle
-    velocity_publisher.publish(twist_msg)
+    twist_msg.angular.z = angular_speed
+    twist_publisher.publish(twist_msg)
 
-    # twist_msg.linear.x = triangle_c / 1000
-    # twist_msg.linear.y = 0
-    # twist_msg.linear.z = 0
-    # twist_msg.angular.x = 0
-    # twist_msg.angular.y = 0
-    # twist_msg.angular.z = 0
-    # velocity_publisher.publish(twist_msg)
+    t0 = rospy.Time.now().to_sec()
+    current_angle = 0
+    while(current_angle < angle):
+        twist_publisher.publish(twist_msg)
+        t1 = rospy.Time.now().to_sec()
+        current_angle = abs(angular_speed)*(t1-t0)
+    
+    twist_msg.angular.z = 0
+    twist_publisher.publish(twist_msg)
+
+    # premik naprej proti željeni točki
+    linear_speed = 0.13
+    twist_msg.linear.x = linear_speed
+    twist_msg.angular.z = 0
+
+    t0 = rospy.Time.now().to_sec()
+    current_distance = 0
+    while(current_distance < triangle_c/480):
+        twist_publisher.publish(twist_msg)
+        t1 = rospy.Time.now().to_sec()
+        current_distance = linear_speed*(t1-t0)
+
+    twist_msg.linear.x = 0
+    twist_publisher.publish(twist_msg)
 
 
 def transform_pixel_to_location(x, y):
@@ -163,7 +189,6 @@ if __name__ == '__main__':
     rospy.sleep(1)
     
     r = rospy.Rate(2)
-    ind = 0
     
     # da zbrišem slike v mapi iz prejšnjega poganjanja
     files = glob('src/exercise7/scripts/kvadrati/*')
