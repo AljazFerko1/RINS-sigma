@@ -30,7 +30,7 @@ class Arm_Mover():
 
         self.extend = JointTrajectory()
         self.extend.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
-        self.extend.points = [JointTrajectoryPoint(positions=[0,0.2,1,0],
+        self.extend.points = [JointTrajectoryPoint(positions=[0,0.9,0,0],
                                                     time_from_start = rospy.Duration(1))]
         
         
@@ -63,8 +63,8 @@ class Arm_Mover():
 if __name__ == "__main__":
     am = Arm_Mover()
     time.sleep(.5)
-    am.arm_movement_pub.publish(am.retract)
-    print('Retracted arm!')
+    am.arm_movement_pub.publish(am.extend)
+    print('Extended arm!')
     
     r = rospy.Rate(10)
     while not rospy.is_shutdown():
