@@ -1,0 +1,349 @@
+#!/usr/bin/python3
+
+import sys
+from time import sleep
+from turtle import color
+import rospy
+import cv2
+import numpy as np
+import tf2_geometry_msgs
+import tf2_ros
+from sensor_msgs.msg import Image
+from geometry_msgs.msg import PointStamped, Vector3, Pose
+from cv_bridge import CvBridge, CvBridgeError
+from visualization_msgs.msg import Marker, MarkerArray
+from std_msgs.msg import ColorRGBA
+import itertools as it
+from move_base_msgs.msg import MoveBaseActionFeedback
+from math import isnan
+from webcolors import rgb_to_name, CSS3_HEX_TO_NAMES, hex_to_rgb
+from sound_play.libsoundplay import SoundClient
+from exercise6.msg import Message
+#import sys
+
+
+def closest_colour(requested_colour):
+    min_colours = {}
+    for key, name in CSS3_HEX_TO_NAMES.items():
+        r_c, g_c, b_c = hex_to_rgb(key)
+        rd = (r_c - requested_colour[0]) ** 2
+        gd = (g_c - requested_colour[1]) ** 2
+        bd = (b_c - requested_colour[2]) ** 2
+        min_colours[(rd + gd + bd)] = name
+    return min_colours[min(min_colours.keys())]
+
+class The_Ring:
+    def __init__(self):
+        self.soundhandle = SoundClient()
+        self.counters = []
+        self.mark_tuples = []
+        self.rings_pub = rospy.Publisher("rings", Message, queue_size=10)
+        #test = Message()
+        #print(f"TEST: {test}")
+        self.rings_msg = Message()
+        rospy.init_node('image_converter', anonymous=True)
+
+        # An object we use for converting images between ROS format and OpenCV format
+        self.bridge = CvBridge()
+
+        # A help variable for holding the dimensions of the image
+        self.dims = (0, 0, 0)
+
+        # Marker array object used for visualizations
+        self.marker_array = MarkerArray()
+        self.marker_num = 1
+
+        # Subscribe to the image and/or depth topic
+        self.image_sub = rospy.Subscriber("/camera/rgb/image_raw", Image, self.image_callback)
+        #self.depth_sub = rospy.Subscriber("/camera/depth_registered/image_raw", Image, self.depth_callback)
+
+        # Publiser for the visualization markers
+        self.markers_pub = rospy.Publisher('markers', MarkerArray, queue_size=1000)
+
+        # Object we use for transforming between coordinate frames
+        self.tf_buf = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buf)
+
+
+    def get_pose(self, e, dist, rgb_img):
+        # Calculate the position of the detected ellipse
+
+        k_f = 525 # kinect focal length in pixels
+
+        elipse_x = self.dims[1] / 2 - e[0][0]
+        angle_to_target = np.arctan2(elipse_x,k_f)
+
+        # Get the angles in the base_link relative coordinate system
+        x,y = dist*np.cos(angle_to_target), dist*np.sin(angle_to_target)
+       
+        # Define a stamped message for transformation - in the "camera rgb frame"
+        point_s = PointStamped()
+        point_s.point.x = -y
+        point_s.point.y = 0
+        point_s.point.z = x
+        point_s.header.frame_id = "camera_rgb_optical_frame"
+        point_s.header.stamp = rospy.Time(0)
+
+        # Get the point in the "map" coordinate system
+        point_world = self.tf_buf.transform(point_s, "map")
+
+        # Create a Pose object with the same position
+        pose = Pose()  
+
+        pose.position.x = point_world.point.x
+        pose.position.y = point_world.point.y
+        pose.position.z = point_world.point.z
+
+        # Create a marker used for visualization
+
+        #check if ring has alredy been detected
+        idx, exists = self.check_if_exists(pose.position.x, pose.position.y)
+
+        
+        #if ring has been detected increes the number of detections
+        #if not add it to the marker tuplse and set detections to 1
+        if exists:
+            self.counters[idx] += 1
+        else:
+            self.counters.append(1)
+            self.mark_tuples.append((pose.position.x, pose.position.y))
+    
+        #a ring must be detected more then 3 times for us to draw a marker
+        if exists and self.counters[idx] == 7:# and self.not_marked(marker):
+            #print(f"ring at location:")
+            #print(f"{pose.position.x, pose.position.y, pose.position.z}")
+            #print(f"{dist}")
+            ############### CALCULATING THE COLOR
+            blues = rgb_img[:,:,0]
+            blues = np.where(blues == 178, np.nan, blues)
+            greens = rgb_img[:,:,1]
+            greens = np.where(greens == 178, np.nan, greens)
+            reds = rgb_img[:,:,2]
+            reds = np.where(reds == 178, np.nan, reds)
+        
+            rgb =(int(np.nanmean(reds)), int(np.nanmean(greens)), int(np.nanmean(blues)))
+            ############## CONVERTING RGB TO COLOR NAME
+            try:
+                color_name = rgb_to_name(rgb)
+            except ValueError:
+                color_name = closest_colour(rgb)
+            if color_name == "lightgray":
+                #print(f"Refused becouse of color")
+                return 
+            print(f"Detected {color_name} ring. With color values {rgb} at location.")
+
+            self.soundhandle.say(f"Detected {color_name} ring.", 'voice_kal_diphone', 1.0)
+
+            ############# ADDING MARKER MARKER
+            self.marker_num += 1
+            marker = Marker()
+            marker.header.stamp = point_world.header.stamp
+            marker.header.frame_id = point_world.header.frame_id
+            marker.pose = pose
+            marker.type = Marker.CUBE
+            marker.action = Marker.ADD
+            marker.frame_locked = False
+            marker.lifetime = rospy.Duration.from_sec(1000)
+            marker.id = self.marker_num
+            marker.scale = Vector3(0.1, 0.1, 0.1)
+            marker.color = ColorRGBA(rgb[0]/255, rgb[1]/255, rgb[2]/255, 1)
+            self.marker_array.markers.append(marker)
+
+
+            ############ IF GREEN RING, REMEMBER LOCATION
+            if color_name == "limegreen":
+                self.rings_msg.x = pose.position.x
+                self.rings_msg.y = pose.position.y
+                self.rings_msg.z = pose.position.z
+                print(f"Detected green ring at location \n{self.rings_msg}")
+                self.rings_pub.publish(self.rings_msg)
+
+            ########### IF WE FOUND ALL 4 RINGS PUBLISH TO MAIN THE LOCATION OF GREEN RING
+            if len(self.marker_array.markers) == 4:
+                print(f"Found all 4 rings. Publishing location of green ring at \n{self.rings_msg}")
+                #print(f"I want to exit")
+                #sleep(5)
+                #sys.exit()
+                #print("Spok1")
+                #quit()
+                #print("spook2")
+
+            
+            #cv2.imshow("Color", rgb_img)
+
+        self.markers_pub.publish(self.marker_array)
+        
+
+    #def not_marked(self, newMarker):
+    #    for marker in self.marker_array.markers:
+    #        if abs(newMarker.pose.position.x - marker.pose.position.x) < 0.5\
+    #            and abs(newMarker.pose.position.y - marker.pose.position.y) < 0.5:
+    #                    return False
+    #    return True
+
+
+    def check_if_exists(self, x, y):
+        for idx, (t_x, t_y) in enumerate(self.mark_tuples):
+            if abs(t_x - x) < 0.5\
+                and abs(t_y - y) < 0.5:
+                    return idx, True
+
+        return 0, False
+
+
+    def image_callback(self,data):
+        global ns
+        ns +=1
+        if ns % 5 != 0:
+            return
+        ns = 0
+        #print('-'*50)
+        try:
+            cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+        except CvBridgeError as e:
+            print(e)
+            #print("Early return")
+            return
+
+        # Set the dimensions of the image
+        self.dims = cv_image.shape
+
+        # Tranform image to gayscale & Do histogram equlization
+        img = cv2.equalizeHist(cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY))
+        rgb_img = np.copy(cv_image)
+        # Binarize the image, there are different ways to do it
+        thresh = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 7, 25) #def 15,25
+
+        # Extract contours
+        contours, _ = cv2.findContours(thresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+
+        # Example how to draw the contours, only for visualization purposes
+        cv2.drawContours(img, contours, -1, (255, 0, 0), 3)
+        
+        #cv2.imshow("Contour window",img)
+        #cv2.waitKey(1)
+
+        # Fit elipses to all extracted contours
+        elps = [cv2.fitEllipse(cnt) for cnt in contours if cnt.shape[0] >= 20]
+
+        #print(f"Potentials = {len(elps)} {elps}")
+        candidates =[(e1, e2) 
+                        for e1, e2 in it.combinations(elps, 2)
+                        if np.sqrt(((e1[0][0] - e2[0][0]) ** 2 + (e1[0][1] - e2[0][1]) ** 2)) < 0.5
+                    ]
+
+        #print("Processing is done! found", len(candidates), "candidates for rings")
+
+        try:
+            depth_img = rospy.wait_for_message('/camera/depth/image_raw', Image)
+        except Exception as e:
+            print(e)
+            print("Early return")
+            return
+
+
+        # Extract the depth from the depth image
+        for e1, e2 in candidates:
+
+            # drawing the ellipses on the image
+            #print(f"{e1 = }")
+            #print(f"{e2 = }")
+            #cv2.ellipse(cv_image, e1, color, 2)
+            #cv2.ellipse(cv_image, e2, color, 2)
+
+            size = (e1[1][0]+e1[1][1])/2
+            #print(f"{size = }")
+            center = (e1[0][1], e1[0][0])
+            if center[0] > 240 or center[1] < 30 or center[1] > 610:
+                #print(f"{center = }")
+                #print(cv_image.shape)
+                #print(f"zavrnu ring ker je prenizko at {center}")
+                continue
+            #cv2.ellipse(cv_image, e1, (0,165,255), 2)
+            #cv2.ellipse(cv_image, e2, (0,165,255), 2)
+            #cv2.imshow("Els", cv_image)
+            #cv2.waitKey(1)
+
+            x1 = int(center[0] - size / 2)
+            x2 = int(center[0] + size / 2)
+            x_min = x1 if x1>0 else 0
+            x_max = x2 if x2<cv_image.shape[0] else cv_image.shape[0]
+
+            y1 = int(center[1] - size / 2)
+            y2 = int(center[1] + size / 2)
+            y_min = y1 if y1 > 0 else 0
+            y_max = y2 if y2 < cv_image.shape[1] else cv_image.shape[1]
+
+            if x_max-x_min < 1 or y_max-y_min < 1:
+                continue
+            depth_image = self.bridge.imgmsg_to_cv2(depth_img, "passthrough")
+            
+
+            #for row in rgb_img[max(0, int(center[0])-5):int(center[0])+5, max(0, int(center[1])-5):int(center[1])+5]:
+            #    print(row)
+            #for row in depth_image[max(0, int(center[0])-5):int(center[0])+5, max(0, int(center[1])-5):int(center[1])+5]:
+            #    print(row)
+
+            #print(f"SLICING:")
+            #print(f"{max(0, int(center[0])-5)}")
+            #print(f"{min(int(center[0])+5, cv_image.shape[0]-1)}")
+            #print(f"{max(0, int(center[1])-5)}")
+            #print(f"{min(int(center[1])+5, cv_image.shape[1]-1)}")
+            skip = False
+            for row in depth_image[max(0, int(center[0])-4):min(int(center[0])+4, cv_image.shape[0]-1), max(0, int(center[1])-4):min(int(center[1])+4, cv_image.shape[1]-1)]:
+                for el in row:
+                    if not isnan(el):
+                        skip = True
+                        #print(f"zavrnu ring ker je fake at {center} ker ma value {el}")
+                        continue
+                if skip: continue
+            if skip: 
+                #print(f"Skiped at {depth_image[max(0, int(center[0])-5):min(int(center[0])+5, cv_image.shape[0]-1), max(0, int(center[1])-5):min(int(center[1])+5, cv_image.shape[1]-1)]}")
+                continue   
+
+            #cv2.ellipse(cv_image, e1, (0,255,0), 2)
+            #cv2.ellipse(cv_image, e2, (0,255,0), 2)
+            #cv2.imshow("els after", cv_image)
+            #cv2.waitKey(1)  
+            #print(f"Frame after {center = }")
+
+            depth_image = depth_image[x_min:x_max,y_min:y_max]
+            #print(f"{depth_image.shape = }")
+            distance = float(np.nanmean(depth_image))
+            self.get_pose(e1, distance, rgb_img[x_min:x_max,y_min:y_max])
+            
+
+        #if len(candidates)>0:
+            #cv2.imshow("Image window",cv_image)
+            #cv2.waitKey(1)
+
+    #def depth_callback(self,data):
+    #    try:
+    #        depth_image = self.bridge.imgmsg_to_cv2(data, "16UC1")
+    #    except CvBridgeError as e:
+    #        print(e)
+
+        # Do the necessairy conversion so we can visuzalize it in OpenCV
+    #    image_1 = depth_image / 65536.0 * 255
+    #    image_1 =image_1/np.max(image_1)*255
+
+    #    image_viz = np.array(image_1, dtype= np.uint8)
+
+    #    cv2.imshow("Depth window", image_viz)
+    #    cv2.waitKey(1)
+
+ns=0
+def main():
+
+    ring_finder = The_Ring()
+
+    try:
+        rospy.spin()
+    except KeyboardInterrupt:
+        print("Shutting down")
+
+    cv2.destroyAllWindows()
+
+
+if __name__ == '__main__':
+    main()
