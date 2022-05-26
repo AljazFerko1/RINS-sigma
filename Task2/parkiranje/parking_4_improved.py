@@ -142,7 +142,7 @@ def move_to_parking(target_y, target_x):
     twist_publisher = rospy.Publisher('/cmd_vel_mux/input/navi', Twist, queue_size=10)
     end_parking_publisher = rospy.Publisher('end_parking', String, queue_size=10)
     
-    offset_to_turtlebot = 70    # parameter za ocenit, razdalja od turtlebota
+    offset_to_turtlebot = 90    # parameter za ocenit, razdalja od turtlebota
     triangle_a = abs(320-target_x)
     triangle_b = 480 - target_y + offset_to_turtlebot
     triangle_c = math.sqrt(triangle_b**2 + triangle_a**2)
