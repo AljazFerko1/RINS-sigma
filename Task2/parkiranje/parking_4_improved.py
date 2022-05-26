@@ -13,6 +13,7 @@ from move_base_msgs.msg import MoveBaseActionFeedback
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
 from actionlib_msgs.msg import GoalID
+from std_msgs.msg import String
 
 
 image_width = 640
@@ -118,8 +119,8 @@ def find_parking_space(img):
 
 # za premikanje do centra kvadrata (v parking)
 def move_to_parking(target_y, target_x):
-    # premikanje s twist messagi
     twist_publisher = rospy.Publisher('/cmd_vel_mux/input/navi', Twist, queue_size=10)
+    end_parking_publisher = rospy.Publisher('end_parking', String, queue_size=10)
     
     offset_to_turtlebot = 70    # parameter za ocenit, razdalja od turtlebota
     triangle_a = abs(320-target_x)
@@ -167,7 +168,9 @@ def move_to_parking(target_y, target_x):
 
     twist_msg.linear.x = 0
     twist_publisher.publish(twist_msg)
-
+    
+    # ko končamo parkiranje
+    end_parking_publisher.publish("finished")
 
 # za združevanje slike parkirišča in rdeče pike
 def merge_images(red_dot, square):
@@ -203,19 +206,6 @@ def closest_parking_point(red_dot_coordinates, image, offset=30):
     return best_coordinates
 
 
-# za računanje povprečnega dela roba parkirišča v bližini rdeče pike
-def mean_parking_point(red_dot_coordinates, image, offset=30):
-    start_y = red_dot_coordinates[0] - offset
-    start_x = red_dot_coordinates[1] - offset
-    finish_y = red_dot_coordinates[0] + offset
-    finish_x = red_dot_coordinates[1] + offset
-
-    parking_mean = mean_point(image[start_y:finish_y, start_x:finish_x], 255)
-    p_y = parking_mean[0] + red_dot_coordinates[0]
-    p_x = parking_mean[1] + red_dot_coordinates[1]
-    return (p_y, p_x)
-
-
 def euclidean_dist(a, b):
     dist = math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
     return dist
@@ -226,7 +216,7 @@ if __name__ == '__main__':
 
     feedback_pub = rospy.Subscriber('/move_base/feedback', MoveBaseActionFeedback, callback=add_feedback, queue_size=1)
     ground_img_sub = rospy.Subscriber('/arm_camera/rgb/image_raw', Image, callback=add_image, queue_size=1)
-
+    
     rospy.sleep(1)
     r = rospy.Rate(4)
     
