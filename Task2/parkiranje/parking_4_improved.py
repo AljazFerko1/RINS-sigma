@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+# TA VERZIJA NAJ SE UPORABLJA!
+
 from glob import glob
 import os
 import math
@@ -97,11 +99,16 @@ def find_parking_space(img):
 
         # poiščemo najbližjo točko roba parkirišča
         offset = 25
-        if offset*4 <= red_dot_center[0] < image_height-offset*4 and \
-            offset*4 <= red_dot_center[1] < image_width-offset*4:
-            parking_point = closest_parking_point(red_dot_center, merged_img, offset)
-            # parking_point = mean_parking_point(red_dot_center, merged_img, offset)
-            if parking_point[0] >= 0 and parking_point[1] >= 0:
+        if offset*3 <= red_dot_center[0] < image_height-offset*3 and \
+            offset*3 <= red_dot_center[1] < image_width-offset*3:
+            parking_point_e = closest_parking_point_e(red_dot_center, merged_img, offset)
+            parking_point_m = closest_parking_point_m(red_dot_center, merged_img, offset)
+            
+            parking_point = (int((parking_point_e[0]+parking_point_e[0])/2), 
+                             int((parking_point_m[1]+parking_point_m[1])/2))
+            
+            if parking_point_e[0] >= 0 and parking_point_e[1] >= 0 and \
+                    parking_point_m[0] >= 0 and parking_point_m[1] >= 0:
                 
                 # izračunaj točko za robota
                 vektor = (red_dot_center[0]-parking_point[0], 
@@ -111,17 +118,17 @@ def find_parking_space(img):
                 target_x = int(8*vektor[1] + red_dot_center[1])
 
                 print(parking_point, "--> (", target_x, ",", target_y, ")")
-                merged_rgb = cv2.cvtColor(merged_img, cv2.COLOR_GRAY2RGB)
-                merged_rgb[parking_point[0], :, 2] = 255
-                merged_rgb[:, parking_point[1], 2] = 255
-                merged_rgb[red_dot_center[0], :, 0] = 255
-                merged_rgb[:, red_dot_center[1], 0] = 255
-                target_y_plot = target_y if target_y < image_height else image_height-1
-                target_x_plot = target_x if target_x < image_width else image_width-1
-                merged_rgb[target_y_plot, :, 1] = 255
-                merged_rgb[:, target_x_plot, 1] = 255
-                cv2.imwrite('src/exercise7/scripts/kvadrati/merged_rgb_{}.png'
-                        .format(thresh_image_number), merged_rgb)
+                # merged_rgb = cv2.cvtColor(merged_img, cv2.COLOR_GRAY2RGB)
+                # merged_rgb[parking_point[0], :, 2] = 255
+                # merged_rgb[:, parking_point[1], 2] = 255
+                # merged_rgb[red_dot_center[0], :, 0] = 255
+                # merged_rgb[:, red_dot_center[1], 0] = 255
+                # target_y_plot = target_y if target_y < image_height else image_height-1
+                # target_x_plot = target_x if target_x < image_width else image_width-1
+                # merged_rgb[target_y_plot, :, 1] = 255
+                # merged_rgb[:, target_x_plot, 1] = 255
+                # cv2.imwrite('src/exercise7/scripts/kvadrati/merged_rgb_{}.png'
+                #         .format(thresh_image_number), merged_rgb)
 
                 # da se premakneš proti točki
                 cancel_publisher = rospy.Publisher('/move_base/cancel', GoalID, queue_size=10)
@@ -201,8 +208,8 @@ def mean_point(image, color_value):
     return (avg_y, avg_x)
 
 
-# za računanje najbližjega dela roba parkirišča rdeči piki
-def closest_parking_point(red_dot_coordinates, image, offset=30):
+# za računanje najbližjega dela roba parkirišča rdeči piki (evklidska razdalja)
+def closest_parking_point_e(red_dot_coordinates, image, offset=30):
     start_y = red_dot_coordinates[0] - offset
     start_x = red_dot_coordinates[1] - offset
 
@@ -219,8 +226,31 @@ def closest_parking_point(red_dot_coordinates, image, offset=30):
     return best_coordinates
 
 
+# za računanje najbližjega dela roba parkirišča rdeči piki (manhattanska razdalja)
+def closest_parking_point_m(red_dot_coordinates, image, offset=30):
+    start_y = red_dot_coordinates[0] - offset
+    start_x = red_dot_coordinates[1] - offset
+
+    min_dist = 1000000
+    best_coordinates = (-1, -1)
+    for i in range(start_y, start_y+offset*2):
+        for j in range(start_x, start_x+offset*2):
+            if image[i, j] == 255:
+                distance_to_point = manhattan_dist((i,j), red_dot_coordinates)
+                if distance_to_point < min_dist:
+                    min_dist = distance_to_point
+                    best_coordinates = (i, j)
+
+    return best_coordinates
+
+
 def euclidean_dist(a, b):
     dist = math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
+    return dist
+
+
+def manhattan_dist(a, b):
+    dist = abs(a[0]-b[0]) + abs(a[1]-b[1])
     return dist
 
 
