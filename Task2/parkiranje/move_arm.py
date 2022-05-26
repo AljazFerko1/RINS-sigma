@@ -28,15 +28,39 @@ class Arm_Mover():
         # self.extend.points = [JointTrajectoryPoint(positions=[0,0.3,1,0],
         #                                             time_from_start = rospy.Duration(1))]
 
-        self.extend = JointTrajectory()
-        self.extend.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
-        self.extend.points = [JointTrajectoryPoint(positions=[0,0.9,0,0],
+        self.parking = JointTrajectory()
+        self.parking.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
+        self.parking.points = [JointTrajectoryPoint(positions=[0,1,0,0],
                                                     time_from_start = rospy.Duration(1))]
         
+        self.ring_detection = JointTrajectory()
+        self.ring_detection.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
+        self.ring_detection.points = [JointTrajectoryPoint(positions=[0,0.225,0,0],
+                                                    time_from_start = rospy.Duration(1))]
         
-        self.right = JointTrajectory()
-        self.right.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
-        self.right.points = [JointTrajectoryPoint(positions=[-1.57,0.3,1,0],
+        self.food_detection = JointTrajectory()
+        self.food_detection.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
+        self.food_detection.points = [JointTrajectoryPoint(positions=[0,0.6,0,0],
+                                                    time_from_start = rospy.Duration(1))]
+        
+        #self.right = JointTrajectory()
+        #self.right.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
+        #self.right.points = [JointTrajectoryPoint(positions=[-1.57,0.3,1,0],
+        #                                            time_from_start = rospy.Duration(1))]
+
+        self.wave_right = JointTrajectory()
+        self.wave_right.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
+        self.wave_right.points = [JointTrajectoryPoint(positions=[-1.57,0.3,1,0],
+                                                    time_from_start = rospy.Duration(1))]
+
+        self.wave_left = JointTrajectory()
+        self.wave_left.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
+        self.wave_left.points = [JointTrajectoryPoint(positions=[1.57,0.3,1,0],
+                                                    time_from_start = rospy.Duration(1))]
+
+        self.wave_neutral = JointTrajectory()
+        self.wave_neutral.joint_names = ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint", "arm_elbow_flex_joint", "arm_wrist_flex_joint"]
+        self.wave_neutral.points = [JointTrajectoryPoint(positions=[0,0.3,1,0],
                                                     time_from_start = rospy.Duration(1))]
 
     def new_user_command(self, data):
@@ -49,12 +73,24 @@ class Arm_Mover():
             if self.user_command == 'retract':
                 self.arm_movement_pub.publish(self.retract)
                 print('Retracted arm!')
-            elif self.user_command == 'extend':
-                self.arm_movement_pub.publish(self.extend)
-                print('Extended arm!')
-            elif self.user_command == 'right':
-                self.arm_movement_pub.publish(self.right)
-                print('Right-ed arm!')
+            elif self.user_command == 'parking':
+                self.arm_movement_pub.publish(self.parking)
+                print('Parking arm!')
+            elif self.user_command == 'ring_detection':
+                self.arm_movement_pub.publish(self.ring_detection)
+                print('Ring detection arm!')
+            elif self.user_command == 'food_detection':
+                self.arm_movement_pub.publish(self.food_detection)
+                print('Food detection arm!')
+            elif self.user_command == 'wave_left':
+                self.arm_movement_pub.publish(self.wave_left)
+                print("Wave left arm")
+            elif self.user_command == 'wave_right':
+                self.arm_movement_pub.publish(self.wave_right)
+                print("Wave right arm")
+            elif self.user_command == 'wave_neutral':
+                self.arm_movement_pub.publish(self.wave_neutral)
+                print("Wave neutral arm")
             else:
                 print('Unknown instruction:', self.user_command)
                 return(-1)
@@ -63,8 +99,10 @@ class Arm_Mover():
 if __name__ == "__main__":
     am = Arm_Mover()
     time.sleep(.5)
-    am.arm_movement_pub.publish(am.extend)
-    print('Extended arm!')
+    """am.arm_movement_pub.publish(am.parking)
+    print('Ring detection arm!')"""
+    
+    #print('Extended arm!')
     
     r = rospy.Rate(10)
     while not rospy.is_shutdown():
