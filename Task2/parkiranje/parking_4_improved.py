@@ -27,6 +27,8 @@ ground_image = Image()
 image_number = 1
 thresh_image_number = 1
 
+start_parking = False
+
 
 def add_feedback(msg):
     global last_feedback
@@ -36,9 +38,20 @@ def add_feedback(msg):
 def add_image(msg):
     global ground_image
     ground_image = msg
+    
+    
+def parking_status(msg):
+    global start_parking
+    start_parking = True
 
 
 def find_parking_space(img):
+    # povezano s subscriberjem za začetek iskanja parkinga
+    global start_parking
+    if not start_parking:
+        print("waiting for parking ...")
+        return
+    
     bridge = CvBridge()
 
     image = bridge.imgmsg_to_cv2(img, desired_encoding='bgr8')
@@ -216,6 +229,7 @@ if __name__ == '__main__':
 
     feedback_pub = rospy.Subscriber('/move_base/feedback', MoveBaseActionFeedback, callback=add_feedback, queue_size=1)
     ground_img_sub = rospy.Subscriber('/arm_camera/rgb/image_raw', Image, callback=add_image, queue_size=1)
+    start_parking_sub = rospy.Subscriber('start_parking', String, callback=parking_status, queue_size=1)
     
     rospy.sleep(1)
     r = rospy.Rate(4)
@@ -224,7 +238,7 @@ if __name__ == '__main__':
     files = glob('src/exercise7/scripts/kvadrati/*')
     for f in files:
         os.remove(f)
-
+    
     while not rospy.is_shutdown():
         find_parking_space(ground_image)
         r.sleep()
